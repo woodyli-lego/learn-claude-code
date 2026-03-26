@@ -1,6 +1,8 @@
-## Setup
+# learn-claude-code
 
-1. 初始化 python venv
+My practice following https://github.com/shareAI-lab/learn-claude-code
+
+## Setup
 
 ```bash
 uv venv venv
