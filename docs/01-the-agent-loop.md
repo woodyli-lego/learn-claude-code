@@ -137,3 +137,9 @@ python agents/s01_agent_loop.py
 12. agent_loop 把助手消息追加到消息列表，结束循环，回到 main。
 13. main 打印消息列表的最后一条消息的 content，即 LLM 的回复 "Done! File is created successfully"。
 14. main 进入 loop，等待用户输入新的 prompt。
+
+## 小结
+
+- 有两个 loop
+  - agent loop 的作用是：当模型需要调用工具时，执行工具，把结果发还给模型继续任务，直到模型不再调用工具。
+  - main loop 的作用是：当 agent loop 结束时，等待用户新的输入（可能是上一个任务需要用户更多输入才能继续，也可能是上一个任务结束了，等待新的任务）。

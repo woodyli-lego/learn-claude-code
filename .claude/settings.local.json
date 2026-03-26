@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(timeout 60 python agents/02-tool-use.py)",
+      "Bash(gtimeout 60 python agents/02-tool-use.py)",
+      "Bash(python -c \":*)",
+      "Bash(source venv/bin/activate)",
+      "Bash(pip install:*)",
+      "Bash(pip list:*)",
+      "Bash(python -c \"import sys; print\\(sys.executable\\)\")",
+      "Bash(./venv/bin/python -c \"import ollama; print\\(''ok''\\)\")",
+      "Bash(./venv/bin/pip list:*)",
+      "Bash(venv/bin/python -m pip install ollama -q)",
+      "Bash(venv/bin/python -c \"import ollama; print\\(''ollama'', ollama.__version__\\)\")"
+    ]
+  }
+}

@@ -1,20 +1,10 @@
-import os
-import json
 import subprocess
 
-from openai import OpenAI
+import ollama
 
 
-OLLAMA_BASE_URL = "http://localhost:11434/v1"
 MODEL = "minimax-m2.7:cloud"
-
-
-client = OpenAI(
-    base_url=OLLAMA_BASE_URL,
-    api_key="ollama",
-)
-
-SYSTEM = f"You are a coding agent at {os.getcwd()}. Use bash to solve tasks. Act, don't explain."
+SYSTEM = f"You are a coding agent. Use bash to solve tasks. Act, don't explain."
 
 TOOLS = [{
     "type": "function",
@@ -34,8 +24,7 @@ def run_bash(command: str) -> str:
     if any(d in command for d in dangerous):
         return "Error: Dangerous command blocked"
     try:
-        r = subprocess.run(command, shell=True, cwd=os.getcwd(),
-                           capture_output=True, text=True, timeout=120)
+        r = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=120)
         out = (r.stdout + r.stderr).strip()
         return out[:50000] if out else "(no output)"
     except subprocess.TimeoutExpired:
@@ -46,46 +35,47 @@ def run_bash(command: str) -> str:
 def agent_loop(messages: list):
     while True:
         # 把对话历史发给模型，获取回复
-        response = client.chat.completions.create(
+        response = ollama.chat(
             model=MODEL,
             messages=[{"role": "system", "content": SYSTEM}, *messages],
             tools=TOOLS,
-            max_tokens=8000,
         )
-        message = response.choices[0].message
+        message = response["message"]
 
-        # 把模型回复的内容（如果有的话）加到对话历史
-        assistant_message = {"role": "assistant", "content": message.content or ""}
+        # 如果模型有 thinking，打印出来
+        if message.get("thinking"):
+            print(f"\033[34m[Thinking]\033[0m {message['thinking']}")
 
-        # 如果模型有 reasoning，把 reasoning 打印出来（但不追加到对话历史，因为 reasoning 不是模型回复的一部分）
-        if message.reasoning:
-            print(f"\033[34m[Reasoning]\033[0m {message.reasoning}")
+        # 获取工具调用
+        tool_calls = message.get("tool_calls", [])
 
-        # 如果模型调用了工具，也把工具调用加到对话历史
-        if message.tool_calls:
-            assistant_message["tool_calls"] = [tool_call.model_dump() for tool_call in message.tool_calls]
+        # 把模型回复加到对话历史
+        assistant_message = {"role": "assistant", "content": message.get("content", "")}
+        if tool_calls:
+            assistant_message["tool_calls"] = tool_calls
         messages.append(assistant_message)
 
-        # 如果模型不需要调用工具，结束循环（此时 assistant_message.content 会有内容，会被打印为 agent 的回复）
-        if not message.tool_calls:
+        # 如果模型不需要调用工具，结束循环
+        if not tool_calls:
             return
 
-        # 如果需要调用工具，那么逐个调用，并把结果追加到对话历史
-        for tool_call in message.tool_calls:
-            # 由于我们只定义了 bash 工具，这里需要做 validation
-            if tool_call.function.name != "bash":
-                output = f"Error: Unknown tool {tool_call.function.name}"
+        # 如果需要调用工具，逐个调用，并把结果追加到对话历史
+        for tool_call in tool_calls:
+            func = tool_call.get("function", {})
+            tool_name = func.get("name")
+            arguments = func.get("arguments", {})
+
+            if tool_name != "bash":
+                output = f"Error: Unknown tool {tool_name}"
             else:
-                # 解析工具调用的参数，执行命令，获取结果并输出
-                arguments = json.loads(tool_call.function.arguments)
                 command = arguments["command"]
-                print(f"\033[33m[Tool call] {tool_call.function.name}\033[0m with arguments {command}")
+                print(f"\033[33m[Tool call]\033[0m bash with arguments {command}")
                 output = run_bash(command)
                 print(output[:200])
-            # 把工具调用的结果追加到对话历史，作为模型下一轮输入的一部分
+
+            # 把工具调用的结果追加到对话历史
             messages.append({
                 "role": "tool",
-                "tool_call_id": tool_call.id,
                 "content": output,
             })
 
@@ -112,8 +102,6 @@ if __name__ == "__main__":
         agent_loop(history)
 
         # 如果最后一条消息是模型回复，就打印出来
-        # 一般来说，执行到这里，说明 agent 已经完成任务，可以输入下一个任务。
-        # 或者 agent 有疑问，需要用户输入更多信息。
         last_message = history[-1]
         if last_message["role"] == "assistant" and last_message["content"]:
             print(last_message["content"])
