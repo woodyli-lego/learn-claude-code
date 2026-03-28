@@ -1,3 +1,4 @@
+import os
 import subprocess
 from pathlib import Path
 
@@ -7,7 +8,51 @@ import ollama
 MODEL = "minimax-m2.7:cloud"
 
 WORKDIR = Path.cwd()
-SYSTEM = f"You are a coding agent at {WORKDIR}. Use tools to solve tasks. Act, don't explain."
+SYSTEM = f"""You are a coding agent at {WORKDIR}. You MUST use the todo tool to plan and track your progress for any task.
+Mark in_progress before starting, completed when done. Prefer tools over prose. Act, don't explain."""
+
+
+class TodoManager:
+    def __init__(self):
+        self.items = []
+
+    def update(self, items: list) -> str:
+        if len(items) > 20:
+            raise ValueError("Max 20 todos allowed")
+        validated = []
+        in_progress_count = 0
+
+        for i, item in enumerate(items):
+            text = str(item.get("text", "")).strip()
+            status = str(item.get("status", "pending")).lower()
+            item_id = str(item.get("id", str(i + 1)))
+            if not text:
+                raise ValueError(f"Item {item_id}: text required")
+            if status not in ("pending", "in_progress", "completed"):
+                raise ValueError(f"Item {item_id}: invalid status '{status}'")
+            if status == "in_progress":
+                in_progress_count += 1
+            validated.append({"id": item_id, "text": text, "status": status})
+
+        if in_progress_count > 1:
+            raise ValueError("Only one task can be in_progress at a time")
+
+        self.items = validated
+        return self.render()
+
+    def render(self) -> str:
+        if not self.items:
+            return "No todos."
+        lines = []
+        for item in self.items:
+            marker = {"pending": "[ ]", "in_progress": "[>]", "completed": "[x]"}[item["status"]]
+            lines.append(f"{marker} #{item['id']}: {item['text']}")
+        done = sum(1 for t in self.items if t["status"] == "completed")
+        lines.append(f"\n({done}/{len(self.items)} completed)")
+        return "\n".join(lines)
+
+
+TODO = TodoManager()
 
 
 # 检查执行路径，只能在 WORKDIR 目录下执行
@@ -69,6 +114,16 @@ def run_edit(path: str, old_text: str, new_text: str) -> str:
         return f"Error: {e}"
 
 
+# 当 LLM 返回要求 function call 的时候，调用对应的函数执行。
+TOOL_HANDLERS = {
+    "bash": lambda **kw: run_bash(kw["command"]),
+    "read_file": lambda **kw: run_read(kw["path"], kw.get("limit")),
+    "write_file": lambda **kw: run_write(kw["path"], kw["content"]),
+    "edit_file": lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"]),
+    "todo": lambda **kw: TODO.update(kw["items"]),
+}
+
+
 # 告诉 LLM，有这些 tool 可以使用（Ollama 格式）
 TOOLS = [
     {"type": "function", "function": {
@@ -91,20 +146,17 @@ TOOLS = [
         "description": "Replace exact text in file.",
         "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "old_text": {"type": "string"}, "new_text": {"type": "string"}}, "required": ["path", "old_text", "new_text"]}
     }},
+    {"type": "function", "function": {
+        "name": "todo",
+        "description": "Update todo list. Track progress on multi-step tasks.",
+        "parameters": {"type": "object", "properties": {"items": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string"}, "text": {"type": "string"}, "status": {"type": "string", "enum": ["pending", "in_progress", "completed"]}}, "required": ["id", "text", "status"]}}}, "required": ["items"]}
+    }},
 ]
-
-
-# 当 LLM 返回要求 function call 的时候，调用对应的函数执行。
-TOOL_HANDLERS = {
-    "bash": lambda **kw: run_bash(kw["command"]),
-    "read_file": lambda **kw: run_read(kw["path"], kw.get("limit")),
-    "write_file": lambda **kw: run_write(kw["path"], kw["content"]),
-    "edit_file": lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"]),
-}
 
 
 # -- The core pattern: a while loop that calls tools until the model stops --
 def agent_loop(messages: list):
+    rounds_since_todo = 0
     while True:
         # 把对话历史发给模型，获取回复
         response = ollama.chat(
@@ -134,6 +186,7 @@ def agent_loop(messages: list):
         if not tool_calls:
             return
 
+        used_todo = False
         # 如果需要调用工具，逐个调用，并把结果追加到对话历史
         for tool_call in tool_calls:
             # 从 tool_call 里解析出工具名称和参数
@@ -146,7 +199,7 @@ def agent_loop(messages: list):
             if handler is None:
                 output = f"Error: Unknown tool {tool_name}"
             else:
-                print(f"\033[33m[Tool call]\033[0m {tool_name} with arguments {arguments}")
+                print(f"\033[33m[Tool calling]\033[0m {tool_name}")
                 output = handler(**arguments)
                 print(output[:200])
 
@@ -156,13 +209,23 @@ def agent_loop(messages: list):
                 "content": output,
             })
 
+            # 如果有使用 todo，记录下来
+            if tool_name == "todo":
+                used_todo = True
+
+        # 如果该轮用了 todo，重置计数；否则计数加一
+        rounds_since_todo = 0 if used_todo else rounds_since_todo + 1
+        # 如果连续 3 轮没用 todo，就在下一轮开头提醒模型更新 todo
+        # 这个提醒，是模拟用户的行为，所有 role 为 user
+        if rounds_since_todo >= 3:
+            messages.append({"role": "user", "content": "<reminder>Update your todos.</reminder>"})
 
 if __name__ == "__main__":
     history = []
     while True:
         # 获取输入，验证是否 exit
         try:
-            query = input("\033[36ms02 >> \033[0m")
+            query = input("\033[36ms03 >> \033[0m")
         except (EOFError, KeyboardInterrupt):
             break
         if query.strip().lower() in ("q", "exit", ""):
