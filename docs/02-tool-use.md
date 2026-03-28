@@ -95,7 +95,23 @@ python agents/s02_tool_use.py
 
 试试这些 prompt (英文 prompt 对 LLM 效果更好, 也可以用中文):
 
-1. `Read the file requirements.txt`
-2. `Create a file called greet.py with a greet(name) function`
-3. `Edit greet.py to add a docstring to the function`
-4. `Read greet.py to verify the edit worked`
+1. `Create a file called greet.py with a greet(name) function`
+2. `Edit greet.py to add a docstring to the function`
+3. `Read greet.py to verify the edit worked`
+4. `Verify to ensure greet.py file works`
+
+## 笔记
+
+启动 agent，把上面问题按顺序输入，可以观察到，LLM 分别调用:
+- `write_file` 创建 `greet.py`
+- `edit_file` 给 `greet.py` 添加 docstring
+- `read_file` 读取 `greet.py` 验证修改
+- `bash` 调用 `python greet.py` 验证文件可执行
+
+## 小结
+
+这个迭代总要做的事情，是把 agent 可用的工具变成可扩展的集合。
+需要调整 agent 可用的 tool，只要修改 2 个地方：
+
+- TOOLS 列表，告诉模型有哪些工具可用，以及它们的参数结构
+- TOOL_HANDLERS 字典，告诉 agent loop 如何调用这些工具

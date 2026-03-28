@@ -103,6 +103,7 @@ TOOL_HANDLERS = {
 }
 
 
+# -- The core pattern: a while loop that calls tools until the model stops --
 def agent_loop(messages: list):
     while True:
         # 把对话历史发给模型，获取回复
@@ -113,30 +114,34 @@ def agent_loop(messages: list):
         )
         message = response["message"]
 
-        # 如果模型有 thinking，打印出来
+        # 把 resp.reasoning 部分打印出来
         if message.get("thinking"):
             print(f"\033[34m[Thinking]\033[0m {message['thinking']}")
 
-        # 获取工具调用
-        tool_calls = message.get("tool_calls", [])
-
-        # 把模型回复加到对话历史
+        # 把 resp.content 放入模型回复
         assistant_message = {"role": "assistant", "content": message.get("content", "")}
+
+        # 如果 resp.tool_calls，也放入模型回复
+        tool_calls = message.get("tool_calls", [])
         if tool_calls:
             assistant_message["tool_calls"] = tool_calls
+
+        # 把模型回复追加到对话历史
         messages.append(assistant_message)
 
         # 如果模型不需要调用工具，结束循环
+        # 一般来说，就是模型已经把请求解决了，或者需要进一步用户输入
         if not tool_calls:
             return
 
         # 如果需要调用工具，逐个调用，并把结果追加到对话历史
         for tool_call in tool_calls:
-            # 获取 tool 对应的 handler
+            # 从 tool_call 里解析出工具名称和参数
             func = tool_call.get("function", {})
             tool_name = func.get("name")
             arguments = func.get("arguments", {})
 
+            # 获取 tool handler，执行工具调用，获取结果
             handler = TOOL_HANDLERS.get(tool_name)
             if handler is None:
                 output = f"Error: Unknown tool {tool_name}"
@@ -174,6 +179,7 @@ if __name__ == "__main__":
         agent_loop(history)
 
         # 如果最后一条消息是模型回复，就打印出来
+        # 这条回复一般是模型对用户的最终回复，或者是需要用户进一步输入的提示
         last_message = history[-1]
         if last_message["role"] == "assistant" and last_message["content"]:
             print(last_message["content"])
