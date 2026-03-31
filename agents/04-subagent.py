@@ -6,7 +6,6 @@ import ollama
 
 
 MODEL = "minimax-m2.7:cloud"
-
 WORKDIR = Path.cwd()
 
 SYSTEM = f"You are a coding agent at {WORKDIR}. Use the task tool to delegate exploration or subtasks."

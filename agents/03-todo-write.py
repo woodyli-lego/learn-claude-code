@@ -6,7 +6,6 @@ import ollama
 
 
 MODEL = "minimax-m2.7:cloud"
-
 WORKDIR = Path.cwd()
 SYSTEM = f"""You are a coding agent at {WORKDIR}. You MUST use the todo tool to plan and track your progress for any task.
 Mark in_progress before starting, completed when done. Prefer tools over prose. Act, don't explain."""

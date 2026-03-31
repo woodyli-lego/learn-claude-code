@@ -42,6 +42,7 @@ def agent_loop(messages: list):
             model=MODEL,
             messages=[{"role": "system", "content": SYSTEM}, *messages],
             tools=TOOLS,
+            think=True
         )
         message = response["message"]
 
