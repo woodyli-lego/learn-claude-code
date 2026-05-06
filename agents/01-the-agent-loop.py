@@ -3,7 +3,7 @@ import subprocess
 import ollama
 
 
-MODEL = "minimax-m2.7:cloud"
+MODEL = "qwen3.6:35b-a3b-coding-nvfp4"
 SYSTEM = f"You are a coding agent. Use bash to solve tasks. Act, don't explain."
 
 TOOLS = [{
